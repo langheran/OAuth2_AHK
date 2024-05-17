@@ -2,24 +2,24 @@
 #Include Jxon.ahk
 #Include Socket.ahk
 #SingleInstance, Force
-; You can find or write an OAuth 2.0 library that fits your needs.
+
+; Initialize the OAuth 2.0 flow
+port := 8089
+
+; Load your credentials from the downloaded JSON file
+FileRead, json, % A_ScriptDir . "\credentials.json"
+credentials := Jxon_Load(json)
+; Extract Client ID and Client Secret
+client_id := credentials.installed.client_id
+client_secret := credentials.installed.client_secret
+redirect_uri := credentials.installed.redirect_uris[1]
+; MsgBox, Client ID: %client_id%`nClient Secret: %client_secret%`nRedirect URI: %redirect_uri%
+
+; Initialize the OAuth 2.0 flow
+oauth := new OAuth2(client_id, client_secret, redirect_uri . ":" . port, "https://accounts.google.com/o/oauth2/auth", "https://accounts.google.com/o/oauth2/token", "https://www.googleapis.com/oauth2/v1/tokeninfo")
 
 if (!FileExist("token.json"))
 {
-    ; Load your credentials from the downloaded JSON file
-    FileRead, json, % A_ScriptDir . "\credentials.json"
-    credentials := Jxon_Load(json)
-    
-    ; Extract Client ID and Client Secret
-    client_id := credentials.installed.client_id
-    client_secret := credentials.installed.client_secret
-    redirect_uri := credentials.installed.redirect_uris[1]
-    ; MsgBox, Client ID: %client_id%`nClient Secret: %client_secret%`nRedirect URI: %redirect_uri%
-    
-    port := 8089
-    ; Initialize the OAuth 2.0 flow
-    oauth := new OAuth2(client_id, client_secret, redirect_uri . ":" . port, "https://accounts.google.com/o/oauth2/auth", "https://accounts.google.com/o/oauth2/token")
-    
     ; Generate the authorization URL
     auth_url := oauth.GenerateAuthURL("https://www.googleapis.com/auth/calendar.readonly")
     Run, %auth_url%
@@ -70,6 +70,25 @@ if (!FileExist("token.json"))
 ; Read the token from the file
 FileRead, token, token.json
 token_obj:=Jxon_Load(token)
+
+; Validate the token
+valid:=oauth.ValidateToken(token_obj.access_token)
+if (!valid){
+    token := oauth.RefreshOAuth2Token(token_obj.refresh_token)
+    if token{
+        ; Save the token for future use
+        if (FileExist("token.json"))
+            FileDelete, token.json
+        token_obj2:=Jxon_Load(token)
+        token_obj2.refresh_token:=token_obj.refresh_token
+        token_obj:=token_obj2
+        token:=Jxon_Dump(token_obj2, 2)
+        token:=StrReplace(token, "\/", "/")
+        FileAppend, % token, token.json
+    } else {
+        MsgBox, Could not authorize!
+    }
+}
 
 ; Request Google Calendar API list of events for calendarId nhurst@ndscognitivelabs.com
 ; https://www.googleapis.com/calendar/v3/calendars/calendarId/events
